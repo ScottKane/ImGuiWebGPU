@@ -43,9 +43,11 @@ struct FragmentOutput {
 @fragment
 fn fs_main(input: FragmentInput) -> FragmentOutput {
     var output: FragmentOutput;
-
-//    output.Colour = input.Colour;
+    
     output.Colour = input.Colour * textureSample(_texture, _sampler, input.TextureCoordinate);
+    output.Colour.r *= output.Colour.a;
+    output.Colour.g *= output.Colour.a;
+    output.Colour.b *= output.Colour.a;
 
     return output;
 }

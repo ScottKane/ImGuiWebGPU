@@ -67,7 +67,7 @@ public class ImGuiController
         {
             Color = new BlendComponent
             {
-                SrcFactor = BlendFactor.SrcAlpha,
+                SrcFactor = BlendFactor.Src,
                 DstFactor = BlendFactor.OneMinusSrcAlpha,
                 Operation = BlendOperation.Add
             },
@@ -264,6 +264,7 @@ public class ImGuiController
     {
         var io = ImGui.GetIO();
         io.Fonts.AddFontDefault();
+        io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
         io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
         
         io.Fonts.GetTexDataAsRGBA32(out byte* pixels, out var width, out var height, out var bytesPerPixel);
@@ -394,7 +395,6 @@ public class ImGuiController
         io.DisplayFramebufferScale = new Vector2(1, 1);
         io.DeltaTime = (float)delta;
         ImGui.NewFrame();
-        ImGui.ShowDemoWindow();
         UpdateInput();
     }
     
@@ -409,8 +409,7 @@ public class ImGuiController
 
         var vtxBufferDescriptor = new BufferDescriptor
         {
-            Size = (ulong)RoundUp(drawData.TotalVtxCount * sizeof(ImDrawVert), 4), // Round up - Buffers that are mapped at creation have to be aligned to `COPY_BUFFER_ALIGNMENT`
-            // Size = (ulong)(drawData.TotalVtxCount * sizeof(ImDrawVert)),
+            Size = (ulong)RoundUp(drawData.TotalVtxCount * sizeof(ImDrawVert), 4),
             Usage = BufferUsage.CopyDst | BufferUsage.Vertex,
             MappedAtCreation = true
         };
@@ -419,8 +418,7 @@ public class ImGuiController
             
         var idxBufferDescriptor = new BufferDescriptor
         {
-            Size = (ulong)RoundUp(drawData.TotalIdxCount * sizeof(ushort), 4), // Round up - Buffers that are mapped at creation have to be aligned to `COPY_BUFFER_ALIGNMENT`
-            // Size = (ulong)drawData.TotalIdxCount * sizeof(ushort),
+            Size = (ulong)RoundUp(drawData.TotalIdxCount * sizeof(ushort), 4),
             Usage = BufferUsage.CopyDst | BufferUsage.Index,
             MappedAtCreation = true
         };
@@ -433,14 +431,11 @@ public class ImGuiController
             {
                 var cmdList = drawData.CmdListsRange[l];
                 
-                var vtxSize = cmdList.VtxBuffer.Size * sizeof(ImDrawVert);
-                var idxSize = cmdList.IdxBuffer.Size * sizeof(ushort);
-                
-                Unsafe.CopyBlock(vtxBufferPtr, (void*)cmdList.VtxBuffer.Data, (uint)vtxSize);
-                Unsafe.CopyBlock(idxBufferPtr, (void*)cmdList.IdxBuffer.Data, (uint)idxSize);
+                Unsafe.CopyBlock(vtxBufferPtr, (void*)cmdList.VtxBuffer.Data, (uint)(cmdList.VtxBuffer.Size * sizeof(ImDrawVert)));
+                Unsafe.CopyBlock(idxBufferPtr, (void*)cmdList.IdxBuffer.Data, (uint)cmdList.IdxBuffer.Size * sizeof(ushort));
 
-                vtxBufferPtr += vtxSize;
-                idxBufferPtr += idxSize;
+                vtxBufferPtr += cmdList.VtxBuffer.Size;
+                idxBufferPtr += cmdList.IdxBuffer.Size;
             }
 
             _webGpu.BufferUnmap(_vtxBuffer);

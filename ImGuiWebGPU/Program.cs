@@ -1,6 +1,8 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Numerics;
+using ImGuiNET;
 using Silk.NET.Core.Native;
 using Silk.NET.Maths;
 using Silk.NET.WebGPU;
@@ -14,7 +16,7 @@ public static unsafe class Program
     private static ImGuiController _imGui = null!;
     
     private static WebGPU   _webGpu = null!;
-    private static IWindow? _window;
+    private static IWindow _window  = null!;
 
     private static Instance*       _instance;
     private static Surface*        _surface;
@@ -24,6 +26,8 @@ public static unsafe class Program
     private static RenderPipeline* _pipeline;
     private static SwapChain*      _swapchain;
     private static TextureFormat   _swapchainFormat;
+    private static TextureView*    _nextTexture;
+    private static RenderPassEncoder* _renderPass;
 
     private const string Shader = """
                                   @vertex
@@ -216,17 +220,24 @@ public static unsafe class Program
         _swapchain = _webGpu.DeviceCreateSwapChain(_device, _surface, swapChainDescriptor);
     }
 
-    private static void WindowOnUpdate(double delta) => _imGui.Update(delta);
+    private static void WindowOnUpdate(double delta)
+    {
+        _imGui.Update(delta);
+        
+        ImGui.ShowDemoWindow();
+        
+        ImGui.Begin("Viewport");
+        ImGui.Image((nint)_nextTexture, new Vector2(256, 256));
+        ImGui.End();
+    }
 
     private static void WindowOnRender(double delta)
     {
-        TextureView* nextTexture = null;
-
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            nextTexture = _webGpu.SwapChainGetCurrentTextureView(_swapchain);
+            _nextTexture = _webGpu.SwapChainGetCurrentTextureView(_swapchain);
 
-            if (attempt == 0 && nextTexture == null)
+            if (attempt == 0 && _nextTexture == null)
             {
                 Console.WriteLine("wgpu.SwapChainGetCurrentTextureView() failed; trying to create a new swap chain...\n");
                 CreateSwapchain();
@@ -236,7 +247,7 @@ public static unsafe class Program
             break;
         }
 
-        if (nextTexture == null)
+        if (_nextTexture == null)
         {
             Console.WriteLine("wgpu.SwapChainGetCurrentTextureView() failed after multiple attempts; giving up.\n");
             return;
@@ -248,7 +259,7 @@ public static unsafe class Program
 
         var colorAttachment = new RenderPassColorAttachment
         {
-            View          = nextTexture,
+            View          = _nextTexture,
             ResolveTarget = null,
             LoadOp        = LoadOp.Clear,
             StoreOp       = StoreOp.Store,
@@ -267,16 +278,16 @@ public static unsafe class Program
             ColorAttachmentCount   = 1,
             DepthStencilAttachment = null
         };
-
-        var renderPass = _webGpu.CommandEncoderBeginRenderPass(encoder, renderPassDescriptor);
-
-        _webGpu.RenderPassEncoderSetPipeline(renderPass, _pipeline);
-        _webGpu.RenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
         
-        _imGui.Render(renderPass);
+        _renderPass = _webGpu.CommandEncoderBeginRenderPass(encoder, renderPassDescriptor);
+        _webGpu.RenderPassEncoderSetPipeline(_renderPass, _pipeline);
         
-        _webGpu.RenderPassEncoderEnd(renderPass);
-        _webGpu.TextureViewRelease(nextTexture);
+        _webGpu.RenderPassEncoderDraw(_renderPass, 3, 1, 0, 0);
+        
+        _imGui.Render(_renderPass);
+        
+        _webGpu.RenderPassEncoderEnd(_renderPass);
+        _webGpu.TextureViewRelease(_nextTexture);
         
         _imGui.ReleaseBuffers();
 
@@ -285,8 +296,8 @@ public static unsafe class Program
         var commandBuffer = _webGpu.CommandEncoderFinish(encoder, new CommandBufferDescriptor());
 
         _webGpu.QueueSubmit(queue, 1, &commandBuffer);
+        
         _webGpu.SwapChainPresent(_swapchain);
-        _window?.SwapBuffers();
     }
 
     private static void PrintAdapterFeatures()
